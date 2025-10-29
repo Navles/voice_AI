@@ -15,6 +15,20 @@ View your app in AI Studio: https://ai.studio/apps/drive/1u6wtua2WppGdRVGBmAMAgd
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Copy `.env.local.template` to `.env.local` and set the required API keys:
+   - `GEMINI_API_KEY`: Your Gemini API key
+   - `OPENWEATHER_API_KEY`: Your OpenWeather API key (get one at https://openweathermap.org/api)
 3. Run the app:
    `npm run dev`
+
+## API Keys
+
+### Gemini API Key
+Required for voice conversation features. Get your key from the Google AI Studio.
+
+### OpenWeather API Key
+Required for weather data features. Get a free API key at https://openweathermap.org/api
+- Sign up for a free account
+- Go to "API Keys" section
+- Copy your API key
+- Add it to .env.local as OPENWEATHER_API_KEY
