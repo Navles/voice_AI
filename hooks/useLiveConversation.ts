@@ -20,13 +20,16 @@ const BUFFER_SIZE = 4096;
 export const useLiveConversation = () => {
   const [status, setStatus] = useState<ConversationStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [currentTranscript, setCurrentTranscript] = useState<string>('');
 
   const sessionRef = useRef<LiveSession | null>(null);
   const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
   const silenceTimeoutRef = useRef<number | null>(null);
-  const SILENCE_TIMEOUT_MS = 4500; // ms to wait before prompting "Are you there?"
-  const VOICE_RMS_THRESHOLD = 0.008; // RMS threshold to detect voice activity
-  const suppressSendRef = useRef<boolean>(false); // when true, don't send microphone audio to session (avoid feedback)
+  const SILENCE_TIMEOUT_MS = 3000; // Reduced timeout for faster response
+  const VOICE_RMS_THRESHOLD = 0.01; // Adjusted threshold
+  const suppressSendRef = useRef<boolean>(false);
+  const transcriptAccumulatorRef = useRef<string>('');
+  const lastTranscriptUpdateRef = useRef<number>(0);
   
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
@@ -49,11 +52,14 @@ export const useLiveConversation = () => {
     audioPlaybackQueueRef.current.forEach(source => source.stop());
     audioPlaybackQueueRef.current.clear();
     nextPlaybackStartTimeRef.current = 0;
-    // clear silence timer
+    
     if (silenceTimeoutRef.current) {
       window.clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
+    
+    transcriptAccumulatorRef.current = '';
+    setCurrentTranscript('');
   }, []);
 
   const stopConversation = useCallback(() => {
@@ -64,10 +70,22 @@ export const useLiveConversation = () => {
     cleanup();
     setStatus('idle');
   }, [cleanup]);
+
+  // Process accumulated transcript when silence is detected
+  const processTranscript = useCallback(() => {
+    const transcript = transcriptAccumulatorRef.current.trim();
+    if (transcript) {
+      console.log('Processing transcript:', transcript);
+      setCurrentTranscript(transcript);
+      transcriptAccumulatorRef.current = '';
+    }
+  }, []);
   
   const startConversation = useCallback(async () => {
     setStatus('connecting');
     setError(null);
+    setCurrentTranscript('');
+    transcriptAccumulatorRef.current = '';
 
     try {
       if (!process.env.API_KEY) {
@@ -84,7 +102,6 @@ export const useLiveConversation = () => {
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
-          // Transcriptions are enabled to allow for future features, but are not stored.
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           speechConfig: {
@@ -98,50 +115,23 @@ export const useLiveConversation = () => {
             const source = inputAudioContextRef.current.createMediaStreamSource(stream);
             scriptProcessorRef.current = inputAudioContextRef.current.createScriptProcessor(BUFFER_SIZE, 1, 1);
 
-            // speak a short prompt when conversation starts
-            try {
-              const utter = new SpeechSynthesisUtterance('How can I help you today?');
-              utter.lang = 'en-US';
-              // suppress sending mic audio while prompt plays to avoid feedback loop
-              suppressSendRef.current = true;
-              utter.onend = () => { suppressSendRef.current = false; };
-              utter.onerror = () => { suppressSendRef.current = false; };
-              window.speechSynthesis.cancel();
-              window.speechSynthesis.speak(utter);
-            } catch (e) {
-              // ignore if SpeechSynthesis not supported
-            }
-
-            // helper to schedule "Are you there?" prompt after silence
-            const scheduleSilencePrompt = () => {
+            const scheduleSilenceTimeout = () => {
               if (silenceTimeoutRef.current) {
                 window.clearTimeout(silenceTimeoutRef.current);
-                silenceTimeoutRef.current = null;
               }
               silenceTimeoutRef.current = window.setTimeout(() => {
-                try {
-                  const utt = new SpeechSynthesisUtterance('Are you there?');
-                  utt.lang = 'en-US';
-                  // suppress sending mic audio while prompt plays to avoid feedback
-                  suppressSendRef.current = true;
-                  utt.onend = () => { suppressSendRef.current = false; };
-                  utt.onerror = () => { suppressSendRef.current = false; };
-                  window.speechSynthesis.cancel();
-                  window.speechSynthesis.speak(utt);
-                } catch (err) {
-                  // ignore
-                }
+                console.log('Silence detected, processing transcript');
+                processTranscript();
                 silenceTimeoutRef.current = null;
               }, SILENCE_TIMEOUT_MS) as unknown as number;
             };
 
-            // start initial silence timer
-            scheduleSilencePrompt();
+            scheduleSilenceTimeout();
 
             scriptProcessorRef.current.onaudioprocess = (audioProcessingEvent) => {
               const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
 
-              // compute RMS to detect voice activity
+              // Compute RMS to detect voice activity
               let sum = 0;
               for (let i = 0; i < inputData.length; i++) {
                 const v = inputData[i];
@@ -149,16 +139,16 @@ export const useLiveConversation = () => {
               }
               const rms = Math.sqrt(sum / inputData.length);
 
-              // if voice detected, clear silence timer and reschedule
+              // If voice detected, reset silence timer
               if (rms > VOICE_RMS_THRESHOLD) {
                 if (silenceTimeoutRef.current) {
                   window.clearTimeout(silenceTimeoutRef.current);
                   silenceTimeoutRef.current = null;
                 }
-                scheduleSilencePrompt();
+                scheduleSilenceTimeout();
               }
 
-              // avoid sending mic audio while we are playing a prompt or model is speaking
+              // Send audio to session when not suppressed
               if (!suppressSendRef.current) {
                 const pcmBlob = createBlob(inputData);
                 sessionPromiseRef.current?.then((session) => {
@@ -171,59 +161,55 @@ export const useLiveConversation = () => {
             scriptProcessorRef.current.connect(inputAudioContextRef.current.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
+            // Handle input transcriptions
+            if (message.serverContent?.inputAudioTranscription?.transcript) {
+              const transcript = message.serverContent.inputAudioTranscription.transcript;
+              console.log('Received transcript:', transcript);
+              
+              // Accumulate transcripts
+              transcriptAccumulatorRef.current += ' ' + transcript;
+              lastTranscriptUpdateRef.current = Date.now();
+            }
+
+            // Handle audio responses
             const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (base64Audio) {
-              // clear any silence prompt while model is speaking
               if (silenceTimeoutRef.current) {
                 window.clearTimeout(silenceTimeoutRef.current);
                 silenceTimeoutRef.current = null;
               }
-              // suppress sending mic audio while model speaks to avoid feedback
+              
               suppressSendRef.current = true;
               setStatus('speaking');
+              
               const outputContext = outputAudioContextRef.current;
               if (outputContext) {
-                  nextPlaybackStartTimeRef.current = Math.max(nextPlaybackStartTimeRef.current, outputContext.currentTime);
-                  const audioBuffer = await decodeAudioData(decode(base64Audio), outputContext, OUTPUT_SAMPLE_RATE, 1);
-                  const source = outputContext.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.connect(outputContext.destination);
-                  source.addEventListener('ended', () => {
-                      audioPlaybackQueueRef.current.delete(source);
-                      if (audioPlaybackQueueRef.current.size === 0) {
-                          setStatus('listening');
-                          // stop suppressing send and reschedule silence prompt when back to listening
-                          suppressSendRef.current = false;
-                          try {
-                            if (silenceTimeoutRef.current) {
-                              window.clearTimeout(silenceTimeoutRef.current);
-                              silenceTimeoutRef.current = null;
-                            }
-                            silenceTimeoutRef.current = window.setTimeout(() => {
-                              const utt = new SpeechSynthesisUtterance('Are you there?');
-                              utt.lang = 'en-US';
-                              // suppress while playing
-                              suppressSendRef.current = true;
-                              utt.onend = () => { suppressSendRef.current = false; };
-                              window.speechSynthesis.cancel();
-                              window.speechSynthesis.speak(utt);
-                              silenceTimeoutRef.current = null;
-                            }, SILENCE_TIMEOUT_MS) as unknown as number;
-                          } catch (e) {
-                            // ignore
-                          }
-                      }
-                  });
-                  source.start(nextPlaybackStartTimeRef.current);
-                  nextPlaybackStartTimeRef.current += audioBuffer.duration;
-                  audioPlaybackQueueRef.current.add(source);
+                nextPlaybackStartTimeRef.current = Math.max(nextPlaybackStartTimeRef.current, outputContext.currentTime);
+                const audioBuffer = await decodeAudioData(decode(base64Audio), outputContext, OUTPUT_SAMPLE_RATE, 1);
+                const source = outputContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputContext.destination);
+                source.addEventListener('ended', () => {
+                  audioPlaybackQueueRef.current.delete(source);
+                  if (audioPlaybackQueueRef.current.size === 0) {
+                    setStatus('listening');
+                    suppressSendRef.current = false;
+                    
+                    // Reset transcript accumulator after response
+                    transcriptAccumulatorRef.current = '';
+                    setCurrentTranscript('');
+                  }
+                });
+                source.start(nextPlaybackStartTimeRef.current);
+                nextPlaybackStartTimeRef.current += audioBuffer.duration;
+                audioPlaybackQueueRef.current.add(source);
               }
             }
             
             if (message.serverContent?.interrupted) {
-                audioPlaybackQueueRef.current.forEach(source => source.stop());
-                audioPlaybackQueueRef.current.clear();
-                nextPlaybackStartTimeRef.current = 0;
+              audioPlaybackQueueRef.current.forEach(source => source.stop());
+              audioPlaybackQueueRef.current.clear();
+              nextPlaybackStartTimeRef.current = 0;
             }
           },
           onerror: (e) => {
@@ -233,8 +219,7 @@ export const useLiveConversation = () => {
             stopConversation();
           },
           onclose: () => {
-            // This can be called when stopConversation is invoked.
-            // No need to set state here as stopConversation handles it.
+            // Called when session closes
           },
         },
       });
@@ -247,7 +232,7 @@ export const useLiveConversation = () => {
       setStatus('error');
       cleanup();
     }
-  }, [cleanup, stopConversation]);
+  }, [cleanup, stopConversation, processTranscript]);
 
   useEffect(() => {
     return () => {
@@ -257,5 +242,11 @@ export const useLiveConversation = () => {
     };
   }, [stopConversation]);
 
-  return { status, error, startConversation, stopConversation };
+  return { 
+    status, 
+    error, 
+    startConversation, 
+    stopConversation,
+    currentTranscript 
+  };
 };

@@ -11,27 +11,50 @@ interface ChatInputProps {
 const SendIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    className="h-4 w-4"
-    fill="currentColor"
+    className="h-5 w-5"
+    fill="none"
     viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
   >
-    <path d="M16.5 12c0-1.77-.78-3.37-2.03-4.47l-1.09-1.09C12.88 5.88 12.44 5.5 12 5.5s-.88.38-1.38.94l-1.09 1.09C8.28 8.63 7.5 10.23 7.5 12s.78 3.37 2.03 4.47l1.09 1.09c.5.56.94.94 1.38.94s.88-.38 1.38-.94l1.54-1.51A5.98 5.98 0 0114 12zm-6 0c0 .67-.17 1.28-.46 1.82L12 15.33l-1.54-1.51A5.98 5.98 0 0110 12c0-.67.17-1.28.46-1.82L12 8.67l1.54 1.51A5.98 5.98 0 0114 12zm-6 0c0-2.67-2.16-4.83-4.83-4.83v9.66C5.84 16.83 8 14.67 8 12zm12 0c0-2.67-2.16-4.83-4.83-4.83v9.66C17.84 16.83 20 14.67 20 12z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+    />
   </svg>
 );
 
-const EndCallIcon = () => (
+const MicIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
-    className="h-4 w-4 mr-1"
+    className="h-5 w-5"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+    />
+  </svg>
+);
+
+const StopIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-5 w-5"
     fill="currentColor"
     viewBox="0 0 24 24"
   >
-    <path d="M12.38,16.47a1.1,1.1,0,0,1-.78,0,12.5,12.5,0,0,1-5.3-3.72A12.52,12.52,0,0,1,2.57,7.1a1.1,1.1,0,0,1,.46-1.42l2.36-1.57a1.1,1.1,0,0,1,1.29.21l2.4,3.21a1.1,1.1,0,0,1-.15,1.4l-1.5,1.5a.36.36,0,0,0,0,.51,10.21,10.21,0,0,0,4.88,4.88.36.36,0,0,0,.51,0l1.5-1.5a1.1,1.1,0,0,1,1.4-.15l3.21,2.4a1.1,1.1,0,0,1,.21,1.29l-1.57,2.36A1.1,1.1,0,0,1,12.38,16.47Z" />
+    <rect x="6" y="6" width="12" height="12" rx="2" />
   </svg>
 );
 
 const LoadingSpinner = () => (
-  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+  <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-300 border-t-gray-700"></div>
 );
 
 export const ChatInput: React.FC<ChatInputProps> = ({
@@ -49,35 +72,59 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       const scrollHeight = textareaRef.current.scrollHeight;
-      // Limit max height to ~100px (about 5 lines)
-      textareaRef.current.style.height = Math.min(scrollHeight, 100) + "px";
+      textareaRef.current.style.height = Math.min(scrollHeight, 120) + "px";
     }
   }, [inputValue]);
+
+  // Auto-focus on mount
+  useEffect(() => {
+    if (textareaRef.current && !isSessionActive) {
+      textareaRef.current.focus();
+    }
+  }, [isSessionActive]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputValue.trim();
-    if (trimmed) {
+    if (trimmed && !disabled) {
       onSend(trimmed);
       setInputValue("");
+      
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     }
   };
 
   const isSendDisabled = disabled || !inputValue.trim();
 
   return (
-    <div className="w-full flex justify-center border border-black-400 rounded-lg">
-      <div className="max-w-5xl bg-gray-50 rounded-xl shadow-sm flex flex-col px-4 py-3 w-full">
-        {/* Textarea - grows vertically */}
-        <div className="flex-1 mb-2">
+    <div className="relative">
+      {isSessionActive && (
+        <div className="flex justify-center mb-3">
+          <button
+            onClick={onEndCall}
+            className="flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-full text-sm font-medium transition-colors"
+            aria-label="End call"
+          >
+            <StopIcon />
+            End Voice Session
+          </button>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="relative">
+        <div className="flex items-end gap-2 bg-gray-100 rounded-2xl p-2">
+          {/* Textarea */}
           <textarea
             ref={textareaRef}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Send a message to start the conversation"
+            placeholder={isSessionActive ? "Or type a message..." : "Message here to Start Conversation..."}
             disabled={disabled}
             rows={1}
-            className="w-full bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 text-base resize-none py-1 max-h-24 leading-relaxed"
+            className="flex-1 bg-transparent border-none outline-none text-gray-900 placeholder-gray-500 text-[15px] resize-none py-2 px-3 max-h-[120px] leading-relaxed"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -85,37 +132,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               }
             }}
           />
-        </div>
 
-        {/* Button row: End call (left), Send (right) */}
-        <div className="flex items-center justify-between">
-          {isSessionActive && (
-            <button
-              onClick={onEndCall}
-              className="flex items-center text-red-600 font-medium text-sm hover:bg-red-100 hover:rounded px-2 py-1 focus:outline-none"
-              aria-label="End call"
-              type="button"
-            >
-              <EndCallIcon /> End call
-            </button>
-          )}
-
-          <div className="flex-1"></div> {/* Spacer */}
-
+          {/* Send/Mic Button */}
           <button
-            onClick={handleSubmit}
+            type="submit"
             disabled={isSendDisabled}
-            className={`flex items-center justify-center gap-1 px-4 py-2 rounded-lg font-medium text-sm transition-opacity ${
+            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
               isSendDisabled
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                : "bg-black text-white hover:bg-gray-800"
+                : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95"
             }`}
             aria-label="Send message"
           >
-            {isLoading ? <LoadingSpinner /> : <SendIcon />}
-            Send
+            {isLoading ? (
+              <LoadingSpinner />
+            ) : inputValue.trim() ? (
+              <SendIcon />
+            ) : (
+              <MicIcon />
+            )}
           </button>
         </div>
+      </form>
+
+      {/* Helper Text */}
+      <div className="mt-2 text-center">
+        <p className="text-xs text-gray-500">
+          Voice Assistant can make mistakes. Check important info.
+        </p>
       </div>
     </div>
   );
