@@ -1,13 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import type { Chat } from "@google/genai";
 import { useLiveConversation } from "./hooks/useLiveConversation";
-import { ControlButton } from "./components/ControlButton";
-import { VoiceVisualizer } from "./components/VoiceVisualizer";
 import { ChatInput } from "./components/ChatInput";
 import { ConversationHistoryPanel } from "./components/ConversationHistoryPanel";
 import { MessageList } from "./components/MessageList";
-import { decode, decodeAudioData } from "./services/audioUtils";
 import { enhancedMcpClient as mcpClient } from "./services/EnhancedMCPClient";
 import { WeatherDisplay } from "./components/Weather";
 import {
@@ -34,8 +31,9 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
 
   const chatRef = useRef<Chat | null>(null);
-  const outputAudioContextRef = useRef<AudioContext | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const voicesLoadedRef = useRef<boolean>(false);
+  const isProcessingVoiceRef = useRef<boolean>(false);
 
   const isSessionActive =
     voiceStatus === "listening" || voiceStatus === "speaking";
@@ -45,6 +43,33 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Load voices on mount (needed for some browsers)
+  useEffect(() => {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      voicesLoadedRef.current = true;
+      console.log(`Loaded ${voices.length} voices`);
+    }
+
+    const handleVoicesChanged = () => {
+      const voices = window.speechSynthesis.getVoices();
+      voicesLoadedRef.current = true;
+      console.log(`Loaded ${voices.length} voices`);
+    };
+
+    window.speechSynthesis.addEventListener(
+      "voiceschanged",
+      handleVoicesChanged
+    );
+
+    return () => {
+      window.speechSynthesis.removeEventListener(
+        "voiceschanged",
+        handleVoicesChanged
+      );
+    };
+  }, []);
+
   // Sync messages with conversation history
   useEffect(() => {
     const currentConv = conversationHistory.getCurrentConversation();
@@ -53,76 +78,82 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Cleanup on unmount - cancel any ongoing speech
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
+
+  // Cancel TTS when voice session becomes active
+  useEffect(() => {
+    if (isSessionActive) {
+      console.log("Voice session started, cancelling any ongoing TTS");
+      window.speechSynthesis.cancel();
+      setIsSpeakingText(false);
+    }
+  }, [isSessionActive]);
+
   const handleStartClick = () => {
-    // Create new conversation when starting
+    window.speechSynthesis.cancel();
+    setIsSpeakingText(false);
     conversationHistory.createConversation();
     setMessages([]);
+    isProcessingVoiceRef.current = false;
     startConversation();
   };
 
   const handleEndClick = () => {
+    isProcessingVoiceRef.current = false;
     stopConversation();
   };
 
-  const speak = async (text: string) => {
-    if (!process.env.API_KEY || !text.trim()) return;
+  const speak = async (text: string, forceSpeech: boolean = false) => {
+    if (!text.trim()) return;
+
+    // Skip TTS during voice session unless forced
+    if (isSessionActive && !forceSpeech) {
+      console.log("Voice session active, skipping TTS");
+      return;
+    }
 
     try {
-      // Resume audio context or create a new one
-      if (!outputAudioContextRef.current) {
-        outputAudioContextRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      }
-      
-      // Ensure audio context is running (required by modern browsers)
-      if (outputAudioContextRef.current.state === 'suspended') {
-        await outputAudioContextRef.current.resume();
-      }
-      
-      const audioContext = outputAudioContextRef.current;
       setIsSpeakingText(true);
+      window.speechSynthesis.cancel();
 
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const ttsResponse = await ai.models.generateContent({
-        model: "gemini-pro",
-        contents: [
-          {
-            parts: [{ text }]
-          }
-        ]
-      });
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
 
-      if (!ttsResponse.candidates?.[0]?.content) {
-        throw new Error("No response received from TTS service");
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice =
+        voices.find(
+          (voice) =>
+            voice.lang.startsWith("en") &&
+            (voice.name.includes("Female") ||
+              voice.name.includes("Google") ||
+              voice.name.includes("Natural"))
+        ) || voices.find((voice) => voice.lang.startsWith("en"));
+
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+        console.log("Using voice:", preferredVoice.name);
       }
 
-      const base64Audio = ttsResponse.candidates[0].content.parts?.[0]?.inlineData?.data;
-      if (base64Audio && audioContext) {
-        console.log('Received audio data, converting to buffer...');
-        const audioBuffer = await decodeAudioData(
-          decode(base64Audio),
-          audioContext,
-          24000,
-          1
-        );
-        console.log('Audio buffer created, setting up playback...');
-        
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-        
-        // Start playback
-        source.start();
-        console.log('Audio playback started');
-        
-        source.onended = () => {
-          console.log('Audio playback completed');
-          setIsSpeakingText(false);
-        };
-      } else {
-        console.error('No audio data received from TTS API');
+      utterance.onend = () => {
+        console.log("Speech completed");
         setIsSpeakingText(false);
-      }
+      };
+
+      utterance.onerror = (error) => {
+        console.error("TTS Error:", error);
+        setAppError(`Text-to-speech error: ${error.error}`);
+        setIsSpeakingText(false);
+      };
+
+      window.speechSynthesis.speak(utterance);
+      console.log("Speech started");
     } catch (e) {
       console.error("TTS Error:", e);
       setAppError(`Text-to-speech error: ${(e as Error).message}`);
@@ -130,17 +161,30 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendText = async (text: string) => {
-    if (!text.trim() || isThinking) return;
+  const handleSendText = async (text: string, fromVoice: boolean = false) => {
+    if (!text.trim() || isThinking) {
+      console.log("Skipping empty or duplicate request");
+      return;
+    }
+
+    // Prevent duplicate voice processing
+    if (fromVoice && isProcessingVoiceRef.current) {
+      console.log("Already processing a voice request, skipping...");
+      return;
+    }
+
+    if (fromVoice) {
+      isProcessingVoiceRef.current = true;
+    }
 
     setAppError(null);
     setMcpToolResult(null);
 
-    // Add user message to history and state
+    console.log(`Processing ${fromVoice ? 'voice' : 'text'} input:`, text);
+
     const userMsg = conversationHistory.addMessage("user", text);
     setMessages((prev) => [...prev, userMsg]);
 
-    // Check if MCP tool should be used
     const toolAnalysis = mcpClient.analyzeQuery(text);
 
     if (!chatRef.current) {
@@ -157,7 +201,6 @@ const App: React.FC = () => {
       let responseText = "";
       let toolCallInfo = undefined;
 
-      // If MCP tool should be used, call it first
       if (
         toolAnalysis.shouldUseTool &&
         toolAnalysis.toolName &&
@@ -179,7 +222,6 @@ const App: React.FC = () => {
           setAppError(`Tool error: ${toolResult.error}`);
           responseText = `I encountered an error trying to get that information: ${toolResult.error}`;
         } else {
-          // Format the tool result for display
           const resultSummary = JSON.stringify(toolResult.result, null, 2);
           setMcpToolResult(resultSummary);
 
@@ -191,7 +233,6 @@ const App: React.FC = () => {
             },
           ];
 
-          // Create context message with tool result
           const contextMessage = `I used the ${toolAnalysis.toolName} tool and got this data: ${resultSummary}. 
           
 User's original question was: "${text}"
@@ -204,12 +245,10 @@ Please provide a natural, conversational response based on this data. Be specifi
           responseText = response.text;
         }
       } else {
-        // Regular chat without tools
         const response = await chatRef.current.sendMessage({ message: text });
         responseText = response.text;
       }
 
-      // Add assistant message to history and state
       const assistantMsg = conversationHistory.addMessage(
         "assistant",
         responseText,
@@ -217,35 +256,51 @@ Please provide a natural, conversational response based on this data. Be specifi
       );
       setMessages((prev) => [...prev, assistantMsg]);
 
-      await speak(responseText);
+      // Only use TTS for text input, voice session handles its own audio
+      if (!fromVoice) {
+        await speak(responseText);
+      }
+
+      console.log("Response completed successfully");
     } catch (e) {
       const errorText = `Sorry, I encountered an error: ${
         (e as Error).message
       }`;
       setAppError(errorText);
-      await speak(errorText);
+      
+      // Only use TTS for text input errors
+      if (!fromVoice) {
+        await speak(errorText);
+      }
+      
       const errorMsg = conversationHistory.addMessage("system", errorText);
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsThinking(false);
+      if (fromVoice) {
+        isProcessingVoiceRef.current = false;
+      }
     }
   };
 
-  // Handle finalized voice transcript updates (sent after silence or server final flag)
+  // Handle finalized voice transcript
   useEffect(() => {
     if (finalTranscript && finalTranscript.trim()) {
+      console.log("Final transcript received:", finalTranscript);
+      
       const run = async () => {
-        await handleSendText(finalTranscript);
-        // acknowledge so hook can clear finalTranscript and avoid duplicate sends
+        await handleSendText(finalTranscript, true); // Pass true to indicate from voice
+        
         try {
           acknowledgeFinalTranscript?.();
-        } catch {
-          // ignore
+        } catch (error) {
+          console.error("Error acknowledging transcript:", error);
         }
       };
+      
       void run();
     }
-  }, [finalTranscript, acknowledgeFinalTranscript]);
+  }, [finalTranscript]);
 
   const handleSelectConversation = (conversationId: string) => {
     conversationHistory.setCurrentConversation(conversationId);
@@ -267,7 +322,6 @@ Please provide a natural, conversational response based on this data. Be specifi
     : isSpeakingText
     ? "speaking"
     : voiceStatus;
-  const displayedError = error || appError;
 
   return (
     <div className="flex flex-col h-screen bg-white">
@@ -292,9 +346,9 @@ Please provide a natural, conversational response based on this data. Be specifi
             </div>
             <div>
               <h1 className="text-lg font-semibold text-gray-900">
-                Voice Assistant
+                AI Assistant
               </h1>
-              <p className="text-xs text-gray-500">with MCP Integration</p>
+              {/* <p className="text-xs text-gray-500">with MCP Integration</p> */}
             </div>
           </div>
 
@@ -303,6 +357,11 @@ Please provide a natural, conversational response based on this data. Be specifi
               <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                 {overallStatus === "speaking" ? "Speaking" : "Listening"}
+              </div>
+            )}
+            {interimTranscript && (
+              <div className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm max-w-xs truncate">
+                {interimTranscript}
               </div>
             )}
             <button
@@ -350,12 +409,11 @@ Please provide a natural, conversational response based on this data. Be specifi
                     />
                   </svg>
                 </div>
-                {/* <VoiceVisualizer status={overallStatus} /> */}
               </div>
 
               <div>
                 <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                  Welcome to Voice Assistant
+                  Welcome to AI Assistant
                 </h2>
                 <p className="text-lg text-gray-600">
                   Start a conversation by clicking the microphone or type your
@@ -363,7 +421,7 @@ Please provide a natural, conversational response based on this data. Be specifi
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+              {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                 <div className="p-4 bg-blue-50 rounded-lg">
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -419,19 +477,7 @@ Please provide a natural, conversational response based on this data. Be specifi
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* {!isSessionActive && (
-                <div className="pt-4">
-                  <ControlButton
-                    onClick={handleStartClick}
-                    status={overallStatus}
-                  />
-                  <p className="mt-4 text-gray-500 text-sm">
-                    Click the microphone to start a voice conversation
-                  </p>
-                </div>
-              )} */}
+              </div> */}
             </div>
           </div>
         ) : (
@@ -459,14 +505,14 @@ Please provide a natural, conversational response based on this data. Be specifi
       )}
 
       {/* Error Display */}
-      {/* {displayedError && (
-        <div className="max-w-4xl mx-auto px-4 mb-2">
+      {appError && (
+        <div className="max-w-4xl mx-auto px-4 pb-2">
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
             <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="flex-1">
-              <p className="text-sm text-red-800">{displayedError}</p>
+              <p className="text-sm text-red-800">{appError}</p>
             </div>
             <button
               onClick={() => setAppError(null)}
@@ -478,13 +524,13 @@ Please provide a natural, conversational response based on this data. Be specifi
             </button>
           </div>
         </div>
-      )} */}
+      )}
 
       {/* Chat Input */}
       <div className="border-t border-gray-200 bg-white">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <ChatInput
-            onSend={handleSendText}
+            onSend={(text) => handleSendText(text, false)}
             onEndCall={handleEndClick}
             onMicClick={handleStartClick}
             disabled={isThinking || isSpeakingText}
