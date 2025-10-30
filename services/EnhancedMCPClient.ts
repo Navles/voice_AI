@@ -32,14 +32,20 @@ export class EnhancedMCPClient {
     const words = lowerQuery.split(/\s+/);
 
     // Weather patterns
-    const weatherKeywords = ['weather', 'temperature', 'hot', 'cold', 'warm', 'chilly', 'humid', 'rain'];
-    const forecastKeywords = ['forecast', 'tomorrow', 'week', 'later', 'next', 'upcoming', 'future'];
-    const isWeatherQuery = weatherKeywords.some(keyword => words.includes(keyword));
-    const isForecastQuery = forecastKeywords.some(keyword => words.includes(keyword));
+    const weatherKeywords = ['weather', 'temperature', 'hot', 'cold', 'warm', 'chilly', 'humid', 'rain', 'raining'];
+    const forecastKeywords = ['forecast', 'tomorrow', 'week', 'later', 'next', 'upcoming', 'future', 'days'];
+    
+    // Check if any word starts with a weather keyword (to catch variations like "temperature", "temperatures", etc)
+    const isWeatherQuery = weatherKeywords.some(keyword => 
+      words.some(word => word.startsWith(keyword))
+    );
+    const isForecastQuery = forecastKeywords.some(keyword => 
+      words.some(word => word.startsWith(keyword))
+    );
 
     if (isWeatherQuery || isForecastQuery) {
-      // Extract location
-      const locationMatch = query.match(/(?:in|at|for)\s+([A-Za-z\s,]+?)(?:\s|$|\?|\.)/i);
+      // Extract location - improved regex to handle more question formats
+      const locationMatch = query.match(/(?:in|at|for|is it.*?in)\s+([A-Za-z\s,]+?)(?:\s|$|\?|\.)/i);
       const location = locationMatch ? locationMatch[1].trim() : null;
 
       if (!location) {

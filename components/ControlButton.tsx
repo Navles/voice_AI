@@ -19,15 +19,25 @@ const Spinner = () => (
 
 
 export const ControlButton: React.FC<ControlButtonProps> = ({ onClick, status }) => {
-  
   const getButtonContent = () => {
     switch(status) {
-        case 'connecting':
-            return <Spinner />;
-        case 'idle':
-        case 'error':
-        default:
-            return <MicrophoneIcon />;
+      case 'connecting':
+        return <Spinner />;
+      case 'error':
+        return (
+          <div className="flex flex-col items-center">
+            <MicrophoneIcon />
+            <span className="text-xs mt-1">Retry</span>
+          </div>
+        );
+      case 'idle':
+      default:
+        return (
+          <div className="flex flex-col items-center">
+            <MicrophoneIcon />
+            <span className="text-xs mt-1">Start</span>
+          </div>
+        );
     }
   };
 
@@ -35,8 +45,10 @@ export const ControlButton: React.FC<ControlButtonProps> = ({ onClick, status })
     switch(status) {
       case 'error':
         return 'text-red-500';
+      case 'connecting':
+        return 'text-blue-500';
       default:
-        return 'text-gray-500';
+        return 'text-gray-600 hover:text-blue-500';
     }
   };
 

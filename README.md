@@ -214,3 +214,11 @@ For issues or questions:
 - Powered by [Google Gemini API](https://ai.google.dev/)
 - Weather data from [OpenWeather](https://openweathermap.org/)
 - Built with React, TypeScript, and Vite
+
+
+
+## Questions
+"What's the weather in Tokyo?"
+"Tell me the 5-day forecast for Paris"
+"Is it raining in Seattle?"
+"What's the temperature in Miami?"

@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 interface ChatInputProps {
   onSend: (text: string) => void;
   onEndCall: () => void;
+  onMicClick?: () => void;
   disabled: boolean;
   isLoading: boolean;
   isSessionActive?: boolean;
@@ -60,6 +61,7 @@ const LoadingSpinner = () => (
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSend,
   onEndCall,
+  onMicClick,
   disabled,
   isLoading,
   isSessionActive,
@@ -135,14 +137,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* Send/Mic Button */}
           <button
-            type="submit"
-            disabled={isSendDisabled}
+            type="button"
+            onClick={(e) => {
+              // If there's text, send it. Otherwise, trigger mic start if provided.
+              if (inputValue.trim()) {
+                // reuse submit handler
+                handleSubmit(e as unknown as React.FormEvent);
+              } else {
+                if (typeof (onMicClick as any) === 'function') {
+                  (onMicClick as any)();
+                }
+              }
+            }}
+            disabled={isLoading}
             className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-              isSendDisabled
+              isLoading
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-600 text-white hover:bg-blue-700 active:scale-95"
             }`}
-            aria-label="Send message"
+            aria-label={inputValue.trim() ? "Send message" : "Start voice"}
           >
             {isLoading ? (
               <LoadingSpinner />
