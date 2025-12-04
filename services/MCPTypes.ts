@@ -8,6 +8,7 @@ export interface MCPServerConfig {
   url: string;
   type: 'http' | 'websocket';
   apiKey?: string;
+  bearerToken?: string;
 }
 
 // Tool Definition Types
@@ -62,6 +63,56 @@ export interface ForecastData {
   location: string;
   country: string;
   forecast: ForecastDay[];
+}
+
+// Severity Service Types
+export interface SeverityData {
+  status: string;
+  timestamp: string;
+  message: string;
+  data: any[];
+}
+
+export interface TruckData {
+  status: string;
+  timestamp: string;
+  message: string;
+  trackType: string;
+  selectedTime: number;
+  data: any[];
+}
+
+export interface DICOverviewData {
+  status: string;
+  xaxes: string;
+  labels: string[];
+  values: number[];
+}
+
+export interface NEAFeedbackData {
+  status: string;
+  count: number;
+  filters: Record<string, any>;
+  data: any[];
+}
+
+export interface DefectNoticeData {
+  status: string;
+  count: number;
+  filters: Record<string, any>;
+  data: any[];
+}
+
+export interface ChartData {
+  type: 'pie' | 'bar' | 'line';
+  title: string;
+  labels?: string[];
+  values?: number[];
+  colors?: string[];
+  xLabels?: string[];
+  yValues?: number[];
+  xTitle?: string;
+  yTitle?: string;
 }
 
 // Error Types

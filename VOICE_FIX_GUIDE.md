@@ -311,3 +311,37 @@ Test everything works:
 - ✅ Smooth conversation flow
 
 Try it now! Click the microphone and say: **"What's the weather in Tokyo?"**
+
+
+Severity Data
+"Show me the street severity data"
+"Get severity information"
+"What's the street condition severity?"
+
+Truck Tracking
+"Show me truck tracking data"
+"Get vehicle tracking information"
+"Display truck locations"
+
+DIC Overview
+"Show DIC overview"
+"Get device overview data"
+"Display DIC information"
+
+NEA Feedback
+"Show NEA feedback for today"
+"Get feedback received on 2025-01-15"
+"Show resolved feedback"
+"Display acknowledged feedback"
+
+Defect Notices
+"Show defect notices"
+"Get defect inspections for 2025-01-15"
+"Display defect notices in sector A"
+
+Charts
+"Show level distribution chart"
+"Display battery status chart"
+"Show location distribution graph"
+"Get summary bar chart"
+"Display level trend"
