@@ -32,7 +32,9 @@ const App: React.FC = () => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   // 2. Add new state variables (add these after existing useState declarations)
   const [dataResult, setDataResult] = useState<any>(null);
-const [dataType, setDataType] = useState<'severity' | 'truck' | 'dic' | 'feedback' | 'defect' | 'chart' | null>(null);
+  const [dataType, setDataType] = useState<
+    "severity" | "truck" | "dic" | "feedback" | "defect" | "chart" | null
+  >(null);
   const chatRef = useRef<Chat | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const voicesLoadedRef = useRef<boolean>(false);
@@ -457,64 +459,6 @@ Please provide a natural, conversational response based on this data. Be specifi
                   message below
                 </p>
               </div>
-
-              {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"
-                        />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 mb-1">
-                        Weather Information
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Ask about current weather or forecasts for any location
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                        />
-                      </svg>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 mb-1">
-                        Voice Conversation
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Natural voice interaction with real-time responses
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div> */}
             </div>
           </div>
         ) : (
